@@ -14,6 +14,7 @@ import {
     Alert,
     Tabs,
     Select,
+    Modal,
 } from 'antd';
 import {
     GithubOutlined,
@@ -22,6 +23,8 @@ import {
     FileTextOutlined,
     CodeOutlined,
     FolderOpenOutlined,
+    RobotOutlined,
+    SettingOutlined,
 } from '@ant-design/icons';
 import dayjs, {Dayjs} from 'dayjs';
 import {
@@ -30,7 +33,8 @@ import {
     GitCommit,
     parseGitLog,
     fetchLocalGitCommits,
-    fetchBranches
+    fetchBranches,
+    optimizeReportWithAIStream,
 } from './services/gitService';
 
 const {Header, Content, Footer} = Layout;
@@ -49,6 +53,11 @@ function App() {
     const [branches, setBranches] = useState<string[]>([]);
     const [currentBranch, setCurrentBranch] = useState<string>('');
     const [loadingBranches, setLoadingBranches] = useState(false);
+    const [optimizing, setOptimizing] = useState(false);
+    const [aiSettingsVisible, setAiSettingsVisible] = useState(false);
+    const [aiApiKey, setAiApiKey] = useState(() => localStorage.getItem('ai_api_key') || '');
+    const [aiModel, setAiModel] = useState(() => localStorage.getItem('ai_model') || 'qwen-plus');
+    const [aiPromptTemplate, setAiPromptTemplate] = useState(() => localStorage.getItem('ai_prompt_template') || '');
 
     // 获取本周的开始和结束日期
     const getThisWeekRange = (): [Dayjs, Dayjs] => {
@@ -174,6 +183,53 @@ function App() {
         } finally {
             setLoading(false);
         }
+    };
+
+    // 使用AI优化周报（流式输出）
+    const handleAIOptimize = async () => {
+        if (commits.length === 0) {
+            message.warning('请先获取提交记录');
+            return;
+        }
+
+        if (!aiApiKey) {
+            setAiSettingsVisible(true);
+            message.info('请先配置AI API Key');
+            return;
+        }
+
+        setOptimizing(true);
+        setWeeklyReport(''); // 清空当前内容
+
+        await optimizeReportWithAIStream(
+            commits,
+            aiApiKey,
+            aiModel,
+            aiPromptTemplate,
+            (content) => {
+                // 流式更新内容
+                setWeeklyReport((prev) => prev + content);
+            },
+            () => {
+                // 完成
+                setOptimizing(false);
+                message.success('AI优化周报完成');
+            },
+            (error) => {
+                // 错误
+                setOptimizing(false);
+                message.error(error);
+            }
+        );
+    };
+
+    // 保存AI设置
+    const saveAISettings = () => {
+        localStorage.setItem('ai_api_key', aiApiKey);
+        localStorage.setItem('ai_model', aiModel);
+        localStorage.setItem('ai_prompt_template', aiPromptTemplate);
+        setAiSettingsVisible(false);
+        message.success('AI设置已保存');
     };
 
     // 复制周报到剪贴板
@@ -527,9 +583,25 @@ git log --oneline --since="2025-12-22" --until="2025-12-28"`}
                                 </Space>
                             }
                             extra={
-                                <Button icon={<CopyOutlined/>} onClick={copyToClipboard}>
-                                    复制周报
-                                </Button>
+                                <Space>
+                                    <Tooltip title="AI设置">
+                                        <Button
+                                            icon={<SettingOutlined/>}
+                                            onClick={() => setAiSettingsVisible(true)}
+                                        />
+                                    </Tooltip>
+                                    <Button
+                                        type="primary"
+                                        icon={<RobotOutlined/>}
+                                        onClick={handleAIOptimize}
+                                        loading={optimizing}
+                                    >
+                                        AI优化周报
+                                    </Button>
+                                    <Button icon={<CopyOutlined/>} onClick={copyToClipboard}>
+                                        复制周报
+                                    </Button>
+                                </Space>
                             }
                             style={{marginBottom: 24}}
                         >
@@ -563,6 +635,68 @@ git log --oneline --since="2025-12-22" --until="2025-12-28"`}
             <Footer style={{textAlign: 'center'}}>
                 Git Summary Tool - 帮助Java程序员快速生成周报
             </Footer>
+
+            {/* AI设置弹窗 */}
+            <Modal
+                title="AI优化设置"
+                open={aiSettingsVisible}
+                onOk={saveAISettings}
+                onCancel={() => setAiSettingsVisible(false)}
+                okText="保存"
+                cancelText="取消"
+            >
+                <Form layout="vertical">
+                    <Form.Item
+                        label="API Key"
+                        required
+                        extra={
+                            <span>
+                                请在 <a href="https://bailian.console.aliyun.com/?apiKey=1" target="_blank" rel="noopener noreferrer">
+                                    阿里云百炼平台
+                                </a> 获取API Key
+                            </span>
+                        }
+                    >
+                        <Input.Password
+                            value={aiApiKey}
+                            onChange={(e) => setAiApiKey(e.target.value)}
+                            placeholder="请输入阿里云百炼API Key (sk-xxx)"
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        label="模型选择"
+                        extra="建议使用qwen-plus，性价比较高"
+                    >
+                        <Select
+                            value={aiModel}
+                            onChange={setAiModel}
+                            options={[
+                                { value: 'qwen-plus', label: '通义千问Plus (推荐)' },
+                                { value: 'qwen-turbo', label: '通义千问Turbo (快速)' },
+                                { value: 'qwen-max', label: '通义千问Max (强力)' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        label="自定义周报模板（可选）"
+                        extra="留空则使用默认模板。可用变量：Git提交记录会自动追加到提示词后面"
+                    >
+                        <Input.TextArea
+                            value={aiPromptTemplate}
+                            onChange={(e) => setAiPromptTemplate(e.target.value)}
+                            placeholder={`示例：你是一个专业的技术周报撰写助手。请根据提供的Git提交记录，生成一份清晰、专业的周报内容。
+
+要求：
+1. 对相似的提交进行归类和合并
+2. 使用简洁专业的技术语言
+3. 按工作类型分类（如：功能开发、Bug修复、代码优化等）
+4. 突出重点工作成果
+5. 只输出周报内容，不要添加额外的解释`}
+                            autoSize={{ minRows: 4, maxRows: 10 }}
+                        />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </Layout>
     );
 }

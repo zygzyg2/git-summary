@@ -493,6 +493,125 @@ export async function checkIsGitRepo(repoPath: string): Promise<boolean> {
     }
 }
 
+// AI优化周报内容
+export interface AIOptimizeResult {
+    success: boolean;
+    report: string;
+    usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    };
+    error?: string;
+}
+
+// 流式调用AI优化周报
+export async function optimizeReportWithAIStream(
+    commits: GitCommit[],
+    apiKey: string,
+    model: string,
+    promptTemplate: string,
+    onChunk: (content: string) => void,
+    onComplete: () => void,
+    onError: (error: string) => void
+): Promise<void> {
+    try {
+        const response = await fetch('http://localhost:3001/api/optimize-report', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                commits,
+                apiKey,
+                model: model || 'qwen-plus',
+                promptTemplate: promptTemplate || '',
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            onError(errorData.error || 'AI优化失败');
+            return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+            onError('无法读取响应流');
+            return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
+                    if (data === '[DONE]') {
+                        continue;
+                    }
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.content) {
+                            onChunk(parsed.content);
+                        }
+                    } catch {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+
+        onComplete();
+    } catch (error) {
+        onError(error instanceof Error ? error.message : 'AI优化失败');
+    }
+}
+
+export async function optimizeReportWithAI(
+    commits: GitCommit[],
+    apiKey: string,
+    model?: string,
+    promptTemplate?: string
+): Promise<AIOptimizeResult> {
+    const response = await fetch('http://localhost:3001/api/optimize-report', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            commits,
+            apiKey,
+            model: model || 'qwen-plus',
+            promptTemplate: promptTemplate || '',
+        }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        return {
+            success: false,
+            report: '',
+            error: data.error || 'AI优化失败',
+        };
+    }
+
+    return {
+        success: true,
+        report: data.report,
+        usage: data.usage,
+    };
+}
+
 // 解析git log输出
 // 支持格式: git log --oneline --since="2025-12-22" --until="2025-12-28" --author="your-name"
 // 或者: git log --pretty=format:"%h|%s|%an|%ai" --since="2025-12-22" --until="2025-12-28"

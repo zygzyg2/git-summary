@@ -152,6 +152,122 @@ app.post('/api/branches', async (req, res) => {
   }
 });
 
+// AI优化周报内容（流式输出）
+app.post('/api/optimize-report', async (req, res) => {
+  try {
+    const { commits, apiKey, model, promptTemplate } = req.body;
+    
+    if (!commits || !Array.isArray(commits) || commits.length === 0) {
+      return res.status(400).json({ error: '请提供提交记录' });
+    }
+    
+    if (!apiKey) {
+      return res.status(400).json({ error: '请提供API Key' });
+    }
+    
+    // 构建提交记录文本
+    const commitsText = commits.map((commit, index) => 
+      `${index + 1}. ${commit.message} (${commit.author}, ${commit.date})`
+    ).join('\n');
+    
+    // 默认系统提示词
+    const defaultSystemPrompt = `你是一个专业的技术周报撰写助手。请根据提供的Git提交记录，生成一份清晰、专业的周报内容。
+
+要求：
+1. 对相似的提交进行归类和合并
+2. 使用简洁专业的技术语言
+3. 按工作类型分类（如：功能开发、Bug修复、代码优化、文档更新等）
+4. 突出重点工作成果
+5. 语言简洁，每条内容控制在一行
+6. 只输出周报内容，不要添加额外的解释或标题`;
+    
+    // 使用用户自定义模板或默认模板
+    const systemPrompt = promptTemplate && promptTemplate.trim() ? promptTemplate.trim() : defaultSystemPrompt;
+    
+    const userPrompt = `以下是本周的Git提交记录，请帮我整理成周报：\n\n${commitsText}`;
+    
+    // 调用阿里云百炼API（流式输出）
+    const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: model || 'qwen-plus',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: true,
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('AI API调用失败:', errorData);
+      return res.status(response.status).json({ 
+        error: errorData.error?.message || `AI服务调用失败: ${response.status}`,
+        detail: errorData
+      });
+    }
+    
+    // 设置流式响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // 读取流式响应
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              res.write('data: [DONE]\n\n');
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content || '';
+              if (content) {
+                res.write(`data: ${JSON.stringify({ content })}\n\n`);
+              }
+            } catch (e) {
+              // 忽略解析错误
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    
+    res.end();
+    
+  } catch (error) {
+    console.error('AI优化周报失败:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: error.message || 'AI优化周报失败'
+      });
+    } else {
+      res.end();
+    }
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Git Summary 后端服务运行在 http://localhost:${PORT}`);
 });
