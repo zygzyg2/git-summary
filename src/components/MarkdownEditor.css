@@ -1,0 +1,18 @@
+.vditor-editor-wrapper {
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: calc(100vh - 350px);
+}
+
+.vditor-editor-wrapper .vditor {
+    border-radius: 8px;
+    height: 100% !important;
+}
+
+.vditor-editor-wrapper .vditor-toolbar {
+    border-radius: 8px 8px 0 0;
+}
+
+.vditor-editor-wrapper .vditor-content {
+    min-height: calc(100vh - 400px);
+}

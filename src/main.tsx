@@ -4,6 +4,7 @@ import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import App from './App.tsx'
 import './index.css'
+import 'antd/dist/reset.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -6,6 +6,7 @@ export interface GitCommit {
     author: string;
     date: string;
     url: string;
+    branch?: string;
 }
 
 export interface ParsedRepoInfo {
@@ -395,13 +396,36 @@ export async function fetchCommits(
 }
 
 // 生成周报文本
-export function generateWeeklyReport(commits: GitCommit[]): string {
+export function generateWeeklyReport(commits: GitCommit[], repoCommits?: { [repoPath: string]: GitCommit[] }): string {
     if (commits.length === 0) {
         return '本周暂无提交记录';
     }
 
+    // 如果有按仓库分组的数据，则按仓库生成
+    if (repoCommits && Object.keys(repoCommits).length > 0) {
+        const sections: string[] = [];
+        
+        for (const [repoPath, repoCommitList] of Object.entries(repoCommits)) {
+            if (repoCommitList.length === 0) continue;
+            
+            // 提取仓库名称
+            const repoName = repoPath.split(/[/\\]/).pop() || repoPath;
+            
+            const lines = repoCommitList.map((commit, index) => {
+                const branchInfo = commit.branch ? ` [${commit.branch}]` : '';
+                return `${index + 1}. ${commit.message}${branchInfo} (${commit.date.split(' ')[0]})`;
+            });
+            
+            sections.push(`## ${repoName}\n${lines.join('\n')}`);
+        }
+        
+        return sections.join('\n\n');
+    }
+
+    // 单仓库模式
     const lines = commits.map((commit, index) => {
-        return `${index + 1}. ${commit.message} (${commit.date.split(' ')[0]})`;
+        const branchInfo = commit.branch ? ` [${commit.branch}]` : '';
+        return `${index + 1}. ${commit.message}${branchInfo} (${commit.date.split(' ')[0]})`;
     });
 
     return lines.join('\n');
@@ -446,6 +470,7 @@ export async function fetchLocalGitCommits(
         author: commit.author,
         date: commit.date,
         url: '',
+        branch: branch === '__all__' ? undefined : branch,
     }));
 }
 
@@ -472,6 +497,51 @@ export async function fetchBranches(repoPath: string): Promise<{ branches: strin
     return {
         branches: data.branches,
         currentBranch: data.currentBranch,
+    };
+}
+
+// 获取仓库作者列表
+export async function fetchAuthors(repoPath: string): Promise<string[]> {
+    const response = await fetch('http://localhost:3001/api/authors', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({repoPath}),
+    });
+
+    if (!response.ok) {
+        throw new Error('获取作者列表失败');
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+        throw new Error(data.error || '获取作者列表失败');
+    }
+
+    return data.authors;
+}
+
+// 更新仓库（git pull）
+export async function gitPull(repoPath: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch('http://localhost:3001/api/git-pull', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({repoPath}),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.error || 'git pull 失败');
+    }
+
+    return {
+        success: data.success,
+        message: data.message,
     };
 }
 
