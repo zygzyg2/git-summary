@@ -9,6 +9,7 @@
     "dev:electron": "concurrently \"cross-env NODE_ENV=development vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "tsc -b && vite build",
     "build:electron": "npm run build && electron-builder",
+    "build:all": "./build-all.sh",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -42,7 +43,8 @@
   },
   "build": {
     "appId": "com.gitsummary.app",
-    "productName": "Git Summary",
+    "productName": "GitSummary",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -51,7 +53,7 @@
       "electron/**/*"
     ],
     "mac": {
-      "target": "dmg"
+      "target": "zip"
     },
     "win": {
       "target": "nsis"

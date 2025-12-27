@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
-import { message } from 'antd';
-import { Dayjs } from 'dayjs';
-import { RepoConfig, RepoCommits } from '../types';
+import React, {useState, useMemo} from 'react';
+import {message} from 'antd';
+import {Dayjs} from 'dayjs';
+import {RepoConfig, RepoCommits} from '../types';
 import {
     GitCommit,
     fetchCommits,
@@ -74,7 +74,7 @@ export function useCommits(): UseCommitsReturn {
         setWeeklyReport('');
 
         try {
-            const { repoUrl, author, dateRange, token } = values;
+            const {repoUrl, author, dateRange, token} = values;
             const [since, until] = dateRange;
 
             const result = await fetchCommits(
@@ -85,7 +85,7 @@ export function useCommits(): UseCommitsReturn {
                 token
             );
 
-            setRepoCommits({ [repoUrl]: result });
+            setRepoCommits({[repoUrl]: result});
             setActiveCommitTab(repoUrl);
             setWeeklyReport(generateWeeklyReport(result));
 
@@ -108,7 +108,7 @@ export function useCommits(): UseCommitsReturn {
 
         try {
             const result = parseGitLog(values.gitLog);
-            setRepoCommits({ 'Git日志': result });
+            setRepoCommits({'Git日志': result});
             setActiveCommitTab('Git日志');
             setWeeklyReport(generateWeeklyReport(result));
 
@@ -138,7 +138,7 @@ export function useCommits(): UseCommitsReturn {
         setWeeklyReport('');
 
         try {
-            const { dateRange } = values;
+            const {dateRange} = values;
             const [since, until] = dateRange;
 
             const newRepoCommits: RepoCommits = {};
