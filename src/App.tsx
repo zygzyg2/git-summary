@@ -15,6 +15,7 @@ import {
     Tabs,
     Select,
     Modal,
+    AutoComplete,
 } from 'antd';
 import {
     GithubOutlined,
@@ -25,6 +26,8 @@ import {
     FolderOpenOutlined,
     RobotOutlined,
     SettingOutlined,
+    FolderOutlined,
+    ArrowLeftOutlined,
 } from '@ant-design/icons';
 import dayjs, {Dayjs} from 'dayjs';
 import {
@@ -58,6 +61,80 @@ function App() {
     const [aiApiKey, setAiApiKey] = useState(() => localStorage.getItem('ai_api_key') || '');
     const [aiModel, setAiModel] = useState(() => localStorage.getItem('ai_model') || 'qwen-plus');
     const [aiPromptTemplate, setAiPromptTemplate] = useState(() => localStorage.getItem('ai_prompt_template') || '');
+    const [repoPathHistory, setRepoPathHistory] = useState<string[]>(() => {
+        try {
+            return JSON.parse(localStorage.getItem('repo_path_history') || '[]');
+        } catch {
+            return [];
+        }
+    });
+    const [folderBrowserVisible, setFolderBrowserVisible] = useState(false);
+    const [browsingPath, setBrowsingPath] = useState('');
+    const [directories, setDirectories] = useState<{ name: string; path: string; isGitRepo: boolean }[]>([]);
+    const [loadingDirs, setLoadingDirs] = useState(false);
+    const [selectedRepoPath, setSelectedRepoPath] = useState('');
+
+    // 保存仓库路径到历史记录
+    const saveRepoPathToHistory = (path: string) => {
+        if (!path || path.trim() === '') return;
+        const trimmedPath = path.trim();
+        const newHistory = [trimmedPath, ...repoPathHistory.filter(p => p !== trimmedPath)].slice(0, 10);
+        setRepoPathHistory(newHistory);
+        localStorage.setItem('repo_path_history', JSON.stringify(newHistory));
+    };
+
+    // 打开文件夹浏览器
+    const openFolderBrowser = async () => {
+        setFolderBrowserVisible(true);
+        setLoadingDirs(true);
+        try {
+            const res = await fetch('http://localhost:3001/api/home-dir');
+            const data = await res.json();
+            await browsePath(data.path);
+        } catch (error) {
+            message.error('无法连接后端服务');
+        }
+    };
+
+    // 浏览指定路径
+    const browsePath = async (dirPath: string) => {
+        setLoadingDirs(true);
+        try {
+            const res = await fetch('http://localhost:3001/api/browse-dir', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({dirPath}),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setBrowsingPath(data.currentPath);
+                setDirectories(data.directories);
+            } else {
+                message.error(data.error || '读取目录失败');
+            }
+        } catch (error) {
+            message.error('读取目录失败');
+        } finally {
+            setLoadingDirs(false);
+        }
+    };
+
+    // 选择文件夹
+    const selectFolder = (folderPath: string) => {
+        setSelectedRepoPath(folderPath);
+        localRepoForm.setFieldsValue({repoPath: folderPath});
+        setFolderBrowserVisible(false);
+        loadBranches(folderPath);
+        saveRepoPathToHistory(folderPath);
+    };
+
+    // 返回上级目录
+    const goToParent = () => {
+        const parentPath = browsingPath.split(/[\/\\]/).slice(0, -1).join('/');
+        if (parentPath) {
+            browsePath(parentPath || '/');
+        }
+    };
 
     // 获取本周的开始和结束日期
     const getThisWeekRange = (): [Dayjs, Dayjs] => {
@@ -161,6 +238,9 @@ function App() {
         try {
             const {repoPath, author, dateRange, branch} = values;
             const [since, until] = dateRange;
+
+            // 保存到历史记录
+            saveRepoPathToHistory(repoPath);
 
             const result = await fetchLocalGitCommits(
                 repoPath,
@@ -338,15 +418,41 @@ function App() {
                                             }}
                                         >
                                             <Form.Item
-                                                name="repoPath"
                                                 label="本地仓库路径"
-                                                rules={[{required: true, message: '请输入本地仓库路径'}]}
+                                                required
                                             >
-                                                <Input
-                                                    placeholder="例如: /home/user/projects/my-project 或 D:\Projects\my-project"
-                                                    prefix={<FolderOpenOutlined/>}
-                                                    onBlur={(e) => loadBranches(e.target.value)}
-                                                />
+                                                <Space.Compact style={{width: '100%'}}>
+                                                    <Form.Item
+                                                        name="repoPath"
+                                                        noStyle
+                                                        rules={[{required: true, message: '请输入本地仓库路径'}]}
+                                                    >
+                                                        <AutoComplete
+                                                            style={{flex: 1}}
+                                                            value={selectedRepoPath}
+                                                            onChange={(value) => setSelectedRepoPath(value)}
+                                                            options={repoPathHistory.map(path => ({
+                                                                value: path,
+                                                                label: path
+                                                            }))}
+                                                            placeholder="例如: /home/user/projects/my-project"
+                                                            onSelect={(value) => {
+                                                                setSelectedRepoPath(value);
+                                                                loadBranches(value);
+                                                            }}
+                                                            onBlur={(e) => loadBranches((e.target as HTMLInputElement).value)}
+                                                            filterOption={(inputValue, option) =>
+                                                                option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
+                                                            }
+                                                        />
+                                                    </Form.Item>
+                                                    <Button
+                                                        icon={<FolderOutlined/>}
+                                                        onClick={openFolderBrowser}
+                                                    >
+                                                        浏览
+                                                    </Button>
+                                                </Space.Compact>
                                             </Form.Item>
 
                                             <Form.Item name="branch" label="分支">
@@ -651,7 +757,8 @@ git log --oneline --since="2025-12-22" --until="2025-12-28"`}
                         required
                         extra={
                             <span>
-                                请在 <a href="https://bailian.console.aliyun.com/?apiKey=1" target="_blank" rel="noopener noreferrer">
+                                请在 <a href="https://bailian.console.aliyun.com/?apiKey=1" target="_blank"
+                                        rel="noopener noreferrer">
                                     阿里云百炼平台
                                 </a> 获取API Key
                             </span>
@@ -671,9 +778,9 @@ git log --oneline --since="2025-12-22" --until="2025-12-28"`}
                             value={aiModel}
                             onChange={setAiModel}
                             options={[
-                                { value: 'qwen-plus', label: '通义千问Plus (推荐)' },
-                                { value: 'qwen-turbo', label: '通义千问Turbo (快速)' },
-                                { value: 'qwen-max', label: '通义千问Max (强力)' },
+                                {value: 'qwen-plus', label: '通义千问Plus (推荐)'},
+                                {value: 'qwen-turbo', label: '通义千问Turbo (快速)'},
+                                {value: 'qwen-max', label: '通义千问Max (强力)'},
                             ]}
                         />
                     </Form.Item>
@@ -692,10 +799,85 @@ git log --oneline --since="2025-12-22" --until="2025-12-28"`}
 3. 按工作类型分类（如：功能开发、Bug修复、代码优化等）
 4. 突出重点工作成果
 5. 只输出周报内容，不要添加额外的解释`}
-                            autoSize={{ minRows: 4, maxRows: 10 }}
+                            autoSize={{minRows: 4, maxRows: 10}}
                         />
                     </Form.Item>
                 </Form>
+            </Modal>
+
+            {/* 文件夹浏览器弹窗 */}
+            <Modal
+                title="选择仓库文件夹"
+                open={folderBrowserVisible}
+                onCancel={() => setFolderBrowserVisible(false)}
+                footer={null}
+                width={600}
+            >
+                <div style={{marginBottom: 12}}>
+                    <Space>
+                        <Button
+                            icon={<ArrowLeftOutlined/>}
+                            onClick={goToParent}
+                            disabled={browsingPath === '/'}
+                        >
+                            上级目录
+                        </Button>
+                        <Input
+                            value={browsingPath}
+                            onChange={(e) => setBrowsingPath(e.target.value)}
+                            onPressEnter={() => browsePath(browsingPath)}
+                            style={{width: 350}}
+                            addonAfter={
+                                <Button type="link" size="small" onClick={() => browsePath(browsingPath)}>
+                                    跳转
+                                </Button>
+                            }
+                        />
+                    </Space>
+                </div>
+                <div style={{maxHeight: 400, overflowY: 'auto', border: '1px solid #d9d9d9', borderRadius: 6}}>
+                    {loadingDirs ? (
+                        <div style={{padding: 24, textAlign: 'center'}}>加载中...</div>
+                    ) : directories.length === 0 ? (
+                        <div style={{padding: 24, textAlign: 'center', color: '#999'}}>此目录下没有子文件夹</div>
+                    ) : (
+                        directories.map((dir) => (
+                            <div
+                                key={dir.path}
+                                style={{
+                                    padding: '10px 16px',
+                                    borderBottom: '1px solid #f0f0f0',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                }}
+                                onDoubleClick={() => browsePath(dir.path)}
+                            >
+                                <Space>
+                                    <FolderOutlined style={{color: dir.isGitRepo ? '#52c41a' : '#1890ff'}}/>
+                                    <span>{dir.name}</span>
+                                    {dir.isGitRepo && (
+                                        <span style={{color: '#52c41a', fontSize: 12}}>(Git仓库)</span>
+                                    )}
+                                </Space>
+                                <Space>
+                                    <Button size="small" onClick={() => browsePath(dir.path)}>
+                                        打开
+                                    </Button>
+                                    {dir.isGitRepo && (
+                                        <Button type="primary" size="small" onClick={() => selectFolder(dir.path)}>
+                                            选择
+                                        </Button>
+                                    )}
+                                </Space>
+                            </div>
+                        ))
+                    )}
+                </div>
+                <div style={{marginTop: 12, color: '#666', fontSize: 12}}>
+                    提示：双击文件夹进入，绿色图标表示Git仓库，点击“选择”确认
+                </div>
             </Modal>
         </Layout>
     );

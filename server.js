@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { readdir, stat } from 'fs/promises';
+import { homedir } from 'os';
+import path from 'path';
 
 const execFileAsync = promisify(execFile);
 const app = express();
@@ -9,6 +12,59 @@ const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// 获取用户主目录
+app.get('/api/home-dir', (req, res) => {
+  res.json({ path: homedir() });
+});
+
+// 浏览文件系统目录
+app.post('/api/browse-dir', async (req, res) => {
+  try {
+    const { dirPath } = req.body;
+    const targetPath = dirPath || homedir();
+    
+    const items = await readdir(targetPath, { withFileTypes: true });
+    const directories = [];
+    
+    for (const item of items) {
+      if (item.isDirectory() && !item.name.startsWith('.')) {
+        const fullPath = path.join(targetPath, item.name);
+        // 检查是否为git仓库
+        let isGitRepo = false;
+        try {
+          await stat(path.join(fullPath, '.git'));
+          isGitRepo = true;
+        } catch {
+          // 不是git仓库
+        }
+        directories.push({
+          name: item.name,
+          path: fullPath,
+          isGitRepo,
+        });
+      }
+    }
+    
+    // 按名称排序，git仓库优先
+    directories.sort((a, b) => {
+      if (a.isGitRepo && !b.isGitRepo) return -1;
+      if (!a.isGitRepo && b.isGitRepo) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    
+    res.json({
+      success: true,
+      currentPath: targetPath,
+      parentPath: path.dirname(targetPath),
+      directories,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message || '读取目录失败',
+    });
+  }
+});
 
 // 获取git提交记录
 app.post('/api/git-log', async (req, res) => {
