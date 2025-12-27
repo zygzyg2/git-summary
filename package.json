@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "main": "electron/main.js",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "dev:electron": "concurrently \"cross-env NODE_ENV=development vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
