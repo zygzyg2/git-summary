@@ -12,6 +12,10 @@ echo "=========================================="
 # 进入项目目录
 cd "$(dirname "$0")"
 
+# 从 package.json 读取版本号
+VERSION=$(node -p "require('./package.json').version")
+echo "版本号: $VERSION"
+
 # 清理旧的构建文件
 echo ""
 echo "[1/4] 清理旧的构建文件..."
@@ -42,7 +46,7 @@ else
     echo "⚠️  Wine 未安装，手动打包 Windows zip..."
     if [ -d "release/win-unpacked" ]; then
         cd release
-        zip -r "GitSummary-1.0.0-win-x64.zip" win-unpacked/
+        zip -r "GitSummary-${VERSION}-win-x64.zip" win-unpacked/
         cd ..
         echo "✅ Windows zip 打包完成"
     else
@@ -50,7 +54,7 @@ else
         npx electron-builder --win --dir 2>&1 || true
         if [ -d "release/win-unpacked" ]; then
             cd release
-            zip -r "GitSummary-1.0.0-win-x64.zip" win-unpacked/
+            zip -r "GitSummary-${VERSION}-win-x64.zip" win-unpacked/
             cd ..
             echo "✅ Windows zip 打包完成"
         else
