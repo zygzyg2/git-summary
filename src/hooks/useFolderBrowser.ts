@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { message } from 'antd';
 import { DirectoryInfo } from '../types';
+import { isElectron } from '../services/gitService';
 
 export interface UseFolderBrowserReturn {
     folderBrowserVisible: boolean;
@@ -24,17 +25,29 @@ export function useFolderBrowser(): UseFolderBrowserReturn {
     const browsePath = async (dirPath: string) => {
         setLoadingDirs(true);
         try {
-            const res = await fetch('http://localhost:3001/api/browse-dir', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dirPath }),
-            });
-            const data = await res.json();
-            if (data.success) {
-                setBrowsingPath(data.currentPath);
-                setDirectories(data.directories);
+            // Electron 环境使用 IPC
+            if (isElectron()) {
+                const data = await window.electronAPI!.browseDir(dirPath);
+                if (data.success) {
+                    setBrowsingPath(data.currentPath || '');
+                    setDirectories(data.directories || []);
+                } else {
+                    message.error(data.error || '读取目录失败');
+                }
             } else {
-                message.error(data.error || '读取目录失败');
+                // 回退到 HTTP 请求
+                const res = await fetch('http://localhost:3001/api/browse-dir', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dirPath }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setBrowsingPath(data.currentPath);
+                    setDirectories(data.directories);
+                } else {
+                    message.error(data.error || '读取目录失败');
+                }
             }
         } catch (error) {
             message.error('读取目录失败');
@@ -48,9 +61,17 @@ export function useFolderBrowser(): UseFolderBrowserReturn {
         setFolderBrowserVisible(true);
         setLoadingDirs(true);
         try {
-            const res = await fetch('http://localhost:3001/api/home-dir');
-            const data = await res.json();
-            await browsePath(data.path);
+            let homePath: string;
+            // Electron 环境使用 IPC
+            if (isElectron()) {
+                homePath = await window.electronAPI!.getHomeDir();
+            } else {
+                // 回退到 HTTP 请求
+                const res = await fetch('http://localhost:3001/api/home-dir');
+                const data = await res.json();
+                homePath = data.path;
+            }
+            await browsePath(homePath);
         } catch (error) {
             message.error('无法连接后端服务');
         }

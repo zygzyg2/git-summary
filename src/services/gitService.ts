@@ -1,4 +1,10 @@
 import dayjs from 'dayjs';
+import '../electron.d.ts';
+
+// 检测是否在 Electron 环境中
+export const isElectron = (): boolean => {
+    return typeof window !== 'undefined' && window.electronAPI !== undefined;
+};
 
 export interface GitCommit {
     sha: string;
@@ -439,6 +445,31 @@ export async function fetchLocalGitCommits(
     until: string,
     branch?: string
 ): Promise<GitCommit[]> {
+    // Electron 环境使用 IPC
+    if (isElectron()) {
+        const result = await window.electronAPI!.gitLog({
+            repoPath,
+            author,
+            since,
+            until,
+            branch,
+        });
+
+        if (!result.success) {
+            throw new Error(result.error || '获取提交记录失败');
+        }
+
+        return (result.commits || []).map((commit) => ({
+            sha: commit.sha,
+            message: commit.message,
+            author: commit.author,
+            date: commit.date,
+            url: '',
+            branch: branch === '__all__' ? undefined : branch,
+        }));
+    }
+
+    // 回退到 HTTP 请求（开发模式）
     const response = await fetch('http://localhost:3001/api/git-log', {
         method: 'POST',
         headers: {
@@ -476,6 +507,21 @@ export async function fetchLocalGitCommits(
 
 // 获取仓库分支列表
 export async function fetchBranches(repoPath: string): Promise<{ branches: string[]; currentBranch: string }> {
+    // Electron 环境使用 IPC
+    if (isElectron()) {
+        const result = await window.electronAPI!.getBranches(repoPath);
+
+        if (!result.success) {
+            throw new Error(result.error || '获取分支列表失败');
+        }
+
+        return {
+            branches: result.branches || [],
+            currentBranch: result.currentBranch || '',
+        };
+    }
+
+    // 回退到 HTTP 请求
     const response = await fetch('http://localhost:3001/api/branches', {
         method: 'POST',
         headers: {
@@ -502,6 +548,18 @@ export async function fetchBranches(repoPath: string): Promise<{ branches: strin
 
 // 获取仓库作者列表
 export async function fetchAuthors(repoPath: string): Promise<string[]> {
+    // Electron 环境使用 IPC
+    if (isElectron()) {
+        const result = await window.electronAPI!.getAuthors(repoPath);
+
+        if (!result.success) {
+            throw new Error(result.error || '获取作者列表失败');
+        }
+
+        return result.authors || [];
+    }
+
+    // 回退到 HTTP 请求
     const response = await fetch('http://localhost:3001/api/authors', {
         method: 'POST',
         headers: {
@@ -525,6 +583,21 @@ export async function fetchAuthors(repoPath: string): Promise<string[]> {
 
 // 更新仓库（git pull）
 export async function gitPull(repoPath: string): Promise<{ success: boolean; message: string }> {
+    // Electron 环境使用 IPC
+    if (isElectron()) {
+        const result = await window.electronAPI!.gitPull(repoPath);
+
+        if (!result.success) {
+            throw new Error(result.error || 'git pull 失败');
+        }
+
+        return {
+            success: true,
+            message: result.message || 'Already up to date.',
+        };
+    }
+
+    // 回退到 HTTP 请求
     const response = await fetch('http://localhost:3001/api/git-pull', {
         method: 'POST',
         headers: {
@@ -548,6 +621,13 @@ export async function gitPull(repoPath: string): Promise<{ success: boolean; mes
 // 检查路径是否为Git仓库
 export async function checkIsGitRepo(repoPath: string): Promise<boolean> {
     try {
+        // Electron 环境使用 IPC
+        if (isElectron()) {
+            const result = await window.electronAPI!.checkRepo(repoPath);
+            return result.isGitRepo === true;
+        }
+
+        // 回退到 HTTP 请求
         const response = await fetch('http://localhost:3001/api/check-repo', {
             method: 'POST',
             headers: {
@@ -585,6 +665,36 @@ export async function optimizeReportWithAIStream(
     onComplete: () => void,
     onError: (error: string) => void
 ): Promise<void> {
+    // Electron 环境使用 IPC
+    if (isElectron()) {
+        try {
+            // 设置流式监听器
+            window.electronAPI!.removeAIListeners();
+            window.electronAPI!.onAIStreamChunk(onChunk);
+            window.electronAPI!.onAIStreamDone(() => {
+                window.electronAPI!.removeAIListeners();
+                onComplete();
+            });
+
+            const result = await window.electronAPI!.optimizeReport({
+                commits,
+                apiKey,
+                model: model || 'qwen-plus',
+                promptTemplate: promptTemplate || '',
+            });
+
+            if (!result.success) {
+                window.electronAPI!.removeAIListeners();
+                onError(result.error || 'AI优化失败');
+            }
+        } catch (error) {
+            window.electronAPI!.removeAIListeners();
+            onError(error instanceof Error ? error.message : 'AI优化失败');
+        }
+        return;
+    }
+
+    // 回退到 HTTP 请求
     try {
         const response = await fetch('http://localhost:3001/api/optimize-report', {
             method: 'POST',
