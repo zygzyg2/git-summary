@@ -56,6 +56,9 @@ export interface ElectronAPI {
         apiKey: string;
         model?: string;
         promptTemplate?: string;
+        provider?: string;
+        customApiUrl?: string;
+        customModel?: string;
     }) => Promise<{
         success: boolean;
         error?: string;

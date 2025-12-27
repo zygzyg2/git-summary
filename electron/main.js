@@ -252,9 +252,33 @@ ipcMain.handle('git-pull', async (event, repoPath) => {
     }
 });
 
+// AI平台配置
+const AI_PROVIDERS = {
+    dashscope: {
+        name: '阿里云百炼',
+        apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    },
+    modelscope: {
+        name: '魔搭社区',
+        apiUrl: 'https://api-inference.modelscope.cn/v1/chat/completions',
+    },
+    siliconflow: {
+        name: '硅基流动',
+        apiUrl: 'https://api.siliconflow.cn/v1/chat/completions',
+    },
+    deepseek: {
+        name: 'DeepSeek官方',
+        apiUrl: 'https://api.deepseek.com/chat/completions',
+    },
+    openai: {
+        name: 'OpenAI',
+        apiUrl: 'https://api.openai.com/v1/chat/completions',
+    },
+};
+
 // AI优化周报 - 流式输出
 ipcMain.handle('optimize-report', async (event, options) => {
-    const { commits, apiKey, model, promptTemplate } = options;
+    const { commits, apiKey, model, promptTemplate, provider, customApiUrl, customModel } = options;
 
     if (!commits || !Array.isArray(commits) || commits.length === 0) {
         return { success: false, error: '请提供提交记录' };
@@ -263,6 +287,23 @@ ipcMain.handle('optimize-report', async (event, options) => {
     if (!apiKey) {
         return { success: false, error: '请提供API Key' };
     }
+
+    // 确定API地址
+    let apiUrl;
+    let actualModel = model;
+    
+    if (provider === 'custom') {
+        if (!customApiUrl) {
+            return { success: false, error: '请提供自定义API地址' };
+        }
+        apiUrl = customApiUrl;
+        actualModel = customModel || model;
+    } else {
+        const providerConfig = AI_PROVIDERS[provider] || AI_PROVIDERS.dashscope;
+        apiUrl = providerConfig.apiUrl;
+    }
+
+    console.log(`AI请求: 平台=${provider || 'dashscope'}, 模型=${actualModel}, API=${apiUrl}`);
 
     const commitsText = commits.map((commit, index) =>
         `${index + 1}. ${commit.message} (${commit.author}, ${commit.date})`
@@ -296,14 +337,14 @@ ipcMain.handle('optimize-report', async (event, options) => {
     const userPrompt = `以下是本周的Git提交记录，请帮我整理成周报：\n\n${commitsText}`;
 
     try {
-        const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: model || 'qwen-plus',
+                model: actualModel || 'qwen-plus',
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt }
@@ -315,8 +356,16 @@ ipcMain.handle('optimize-report', async (event, options) => {
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            return { success: false, error: errorData.error?.message || `AI服务调用失败: ${response.status}` };
+            const errorText = await response.text().catch(() => '');
+            console.error(`AI API调用失败: status=${response.status}, response=${errorText}`);
+            let errorMessage = `AI服务调用失败: ${response.status}`;
+            try {
+                const errorData = JSON.parse(errorText);
+                errorMessage = errorData.error?.message || errorData.message || errorMessage;
+            } catch {
+                // 忽略JSON解析错误
+            }
+            return { success: false, error: errorMessage };
         }
 
         const reader = response.body.getReader();

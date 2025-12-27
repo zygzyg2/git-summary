@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Card, Space, Tag } from 'antd';
-import { CopyOutlined, RobotOutlined } from '@ant-design/icons';
+import { CopyOutlined, RobotOutlined, StopOutlined } from '@ant-design/icons';
 import MarkdownEditor from './MarkdownEditor';
 
 interface ReportTabProps {
@@ -9,6 +9,7 @@ interface ReportTabProps {
     optimizing: boolean;
     onWeeklyReportChange: (value: string) => void;
     onAIOptimize: () => void;
+    onCancelAIOptimize: () => void;
     onCopy: () => void;
 }
 
@@ -18,6 +19,7 @@ const ReportTab: React.FC<ReportTabProps> = ({
     optimizing,
     onWeeklyReportChange,
     onAIOptimize,
+    onCancelAIOptimize,
     onCopy,
 }) => {
     return (
@@ -34,15 +36,24 @@ const ReportTab: React.FC<ReportTabProps> = ({
                     )}
                 </Space>
                 <Space>
-                    <Button
-                        type="primary"
-                        icon={<RobotOutlined />}
-                        onClick={onAIOptimize}
-                        loading={optimizing}
-                        disabled={totalCommits === 0}
-                    >
-                        AI优化周报
-                    </Button>
+                    {optimizing ? (
+                        <Button
+                            danger
+                            icon={<StopOutlined />}
+                            onClick={onCancelAIOptimize}
+                        >
+                            取消生成
+                        </Button>
+                    ) : (
+                        <Button
+                            type="primary"
+                            icon={<RobotOutlined />}
+                            onClick={onAIOptimize}
+                            disabled={totalCommits === 0}
+                        >
+                            AI优化周报
+                        </Button>
+                    )}
                     <Button icon={<CopyOutlined />} onClick={onCopy}>
                         复制周报
                     </Button>

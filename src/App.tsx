@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Layout, Space, Tabs, Tag, message } from 'antd';
-import { FileTextOutlined, UnorderedListOutlined } from '@ant-design/icons';
-import { Dayjs } from 'dayjs';
+import {useState} from 'react';
+import {Layout, Space, Tabs, Tag, message} from 'antd';
+import {FileTextOutlined, UnorderedListOutlined} from '@ant-design/icons';
+import {Dayjs} from 'dayjs';
 
 // Components
 import AppHeader from './components/AppHeader';
@@ -12,9 +12,9 @@ import AISettingsModal from './components/AISettingsModal';
 import FolderBrowserModal from './components/FolderBrowserModal';
 
 // Hooks
-import { useAISettings, useCommits, useFolderBrowser, useRepoConfig } from './hooks';
+import {useAISettings, useCommits, useFolderBrowser, useRepoConfig} from './hooks';
 
-const { Content, Footer } = Layout;
+const {Content, Footer} = Layout;
 
 function App() {
     // UI 状态
@@ -50,7 +50,10 @@ function App() {
             aiSettings.aiApiKey,
             aiSettings.aiModel,
             aiSettings.aiPromptTemplate,
-            () => aiSettings.setAiSettingsVisible(true)
+            () => aiSettings.setAiSettingsVisible(true),
+            aiSettings.aiProvider,
+            aiSettings.aiCustomApiUrl,
+            aiSettings.aiCustomModel
         );
     };
 
@@ -61,13 +64,13 @@ function App() {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh' }}>
+        <Layout style={{minHeight: '100vh'}}>
             <AppHeader
                 onOpenConfigDrawer={() => setConfigDrawerVisible(true)}
                 onOpenAISettings={() => aiSettings.setAiSettingsVisible(true)}
             />
 
-            <Content style={{ padding: '16px 24px', maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+            <Content style={{padding: '16px 24px', maxWidth: 1400, margin: '0 auto', width: '100%'}}>
                 <Tabs
                     activeKey={activeResultTab}
                     onChange={setActiveResultTab}
@@ -76,7 +79,7 @@ function App() {
                             key: 'report',
                             label: (
                                 <Space>
-                                    <FileTextOutlined />
+                                    <FileTextOutlined/>
                                     <span>周报内容</span>
                                 </Space>
                             ),
@@ -87,6 +90,7 @@ function App() {
                                     optimizing={commits.optimizing}
                                     onWeeklyReportChange={commits.setWeeklyReport}
                                     onAIOptimize={handleAIOptimize}
+                                    onCancelAIOptimize={commits.cancelAIOptimize}
                                     onCopy={commits.copyToClipboard}
                                 />
                             ),
@@ -95,7 +99,7 @@ function App() {
                             key: 'commits',
                             label: (
                                 <Space>
-                                    <UnorderedListOutlined />
+                                    <UnorderedListOutlined/>
                                     <span>提交记录</span>
                                     {commits.totalCommits > 0 && <Tag color="blue">{commits.totalCommits}</Tag>}
                                 </Space>
@@ -114,7 +118,8 @@ function App() {
                 />
             </Content>
 
-            <Footer style={{ textAlign: 'center', padding: '12px 50px', background: '#f5f5f5', fontSize: 13, color: '#666' }}>
+            <Footer
+                style={{textAlign: 'center', padding: '12px 50px', background: '#f5f5f5', fontSize: 13, color: '#666'}}>
                 Git 周报助手 - 智能生成工作周报
             </Footer>
 
@@ -147,12 +152,18 @@ function App() {
             {/* AI设置弹窗 */}
             <AISettingsModal
                 visible={aiSettings.aiSettingsVisible}
+                provider={aiSettings.aiProvider}
                 apiKey={aiSettings.aiApiKey}
                 model={aiSettings.aiModel}
                 promptTemplate={aiSettings.aiPromptTemplate}
+                customApiUrl={aiSettings.aiCustomApiUrl}
+                customModel={aiSettings.aiCustomModel}
+                onProviderChange={aiSettings.setAiProvider}
                 onApiKeyChange={aiSettings.setAiApiKey}
                 onModelChange={aiSettings.setAiModel}
                 onPromptTemplateChange={aiSettings.setAiPromptTemplate}
+                onCustomApiUrlChange={aiSettings.setAiCustomApiUrl}
+                onCustomModelChange={aiSettings.setAiCustomModel}
                 onSave={handleSaveAISettings}
                 onCancel={() => aiSettings.setAiSettingsVisible(false)}
             />

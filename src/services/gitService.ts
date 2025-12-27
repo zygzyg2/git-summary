@@ -663,7 +663,11 @@ export async function optimizeReportWithAIStream(
     promptTemplate: string,
     onChunk: (content: string) => void,
     onComplete: () => void,
-    onError: (error: string) => void
+    onError: (error: string) => void,
+    provider?: string,
+    customApiUrl?: string,
+    customModel?: string,
+    abortSignal?: AbortSignal
 ): Promise<void> {
     // Electron 环境使用 IPC
     if (isElectron()) {
@@ -676,11 +680,22 @@ export async function optimizeReportWithAIStream(
                 onComplete();
             });
 
+            // 监听取消信号
+            if (abortSignal) {
+                abortSignal.addEventListener('abort', () => {
+                    window.electronAPI!.removeAIListeners();
+                    onError('cancelled');
+                });
+            }
+
             const result = await window.electronAPI!.optimizeReport({
                 commits,
                 apiKey,
                 model: model || 'qwen-plus',
                 promptTemplate: promptTemplate || '',
+                provider: provider || 'dashscope',
+                customApiUrl: customApiUrl || '',
+                customModel: customModel || '',
             });
 
             if (!result.success) {
@@ -689,7 +704,11 @@ export async function optimizeReportWithAIStream(
             }
         } catch (error) {
             window.electronAPI!.removeAIListeners();
-            onError(error instanceof Error ? error.message : 'AI优化失败');
+            if (abortSignal?.aborted) {
+                onError('cancelled');
+            } else {
+                onError(error instanceof Error ? error.message : 'AI优化失败');
+            }
         }
         return;
     }
@@ -706,7 +725,11 @@ export async function optimizeReportWithAIStream(
                 apiKey,
                 model: model || 'qwen-plus',
                 promptTemplate: promptTemplate || '',
+                provider: provider || 'dashscope',
+                customApiUrl: customApiUrl || '',
+                customModel: customModel || '',
             }),
+            signal: abortSignal,
         });
 
         if (!response.ok) {
@@ -725,6 +748,13 @@ export async function optimizeReportWithAIStream(
         let buffer = '';
 
         while (true) {
+            // 检查是否已取消
+            if (abortSignal?.aborted) {
+                reader.cancel();
+                onError('cancelled');
+                return;
+            }
+
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -752,7 +782,11 @@ export async function optimizeReportWithAIStream(
 
         onComplete();
     } catch (error) {
-        onError(error instanceof Error ? error.message : 'AI优化失败');
+        if (abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+            onError('cancelled');
+        } else {
+            onError(error instanceof Error ? error.message : 'AI优化失败');
+        }
     }
 }
 

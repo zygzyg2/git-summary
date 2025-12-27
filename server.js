@@ -263,10 +263,34 @@ app.post('/api/authors', async (req, res) => {
     }
 });
 
+// AI平台配置
+const AI_PROVIDERS = {
+    dashscope: {
+        name: '阿里云百炼',
+        apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    },
+    modelscope: {
+        name: '魔搭社区',
+        apiUrl: 'https://api-inference.modelscope.cn/v1/chat/completions',
+    },
+    siliconflow: {
+        name: '硅基流动',
+        apiUrl: 'https://api.siliconflow.cn/v1/chat/completions',
+    },
+    deepseek: {
+        name: 'DeepSeek官方',
+        apiUrl: 'https://api.deepseek.com/chat/completions',
+    },
+    openai: {
+        name: 'OpenAI',
+        apiUrl: 'https://api.openai.com/v1/chat/completions',
+    },
+};
+
 // AI优化周报内容（流式输出）
 app.post('/api/optimize-report', async (req, res) => {
     try {
-        const {commits, apiKey, model, promptTemplate} = req.body;
+        const {commits, apiKey, model, promptTemplate, provider, customApiUrl, customModel} = req.body;
 
         if (!commits || !Array.isArray(commits) || commits.length === 0) {
             return res.status(400).json({error: '请提供提交记录'});
@@ -275,6 +299,25 @@ app.post('/api/optimize-report', async (req, res) => {
         if (!apiKey) {
             return res.status(400).json({error: '请提供API Key'});
         }
+
+        // 确定API地址
+        let apiUrl;
+        let actualModel = model;
+        
+        if (provider === 'custom') {
+            // 自定义平台
+            if (!customApiUrl) {
+                return res.status(400).json({error: '请提供自定义API地址'});
+            }
+            apiUrl = customApiUrl;
+            actualModel = customModel || model;
+        } else {
+            // 预定义平台
+            const providerConfig = AI_PROVIDERS[provider] || AI_PROVIDERS.dashscope;
+            apiUrl = providerConfig.apiUrl;
+        }
+
+        console.log(`AI请求: 平台=${provider || 'dashscope'}, 模型=${actualModel}, API=${apiUrl}`);
 
         // 构建提交记录文本
         const commitsText = commits.map((commit, index) =>
@@ -310,15 +353,15 @@ app.post('/api/optimize-report', async (req, res) => {
 
         const userPrompt = `以下是本周的Git提交记录，请帮我整理成周报：\n\n${commitsText}`;
 
-        // 调用阿里云百炼API（流式输出）
-        const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+        // 调用AI API（流式输出）
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: model || 'qwen-plus',
+                model: actualModel || 'qwen-plus',
                 messages: [
                     {role: 'system', content: systemPrompt},
                     {role: 'user', content: userPrompt}
@@ -330,11 +373,19 @@ app.post('/api/optimize-report', async (req, res) => {
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error('AI API调用失败:', errorData);
+            const errorText = await response.text().catch(() => '');
+            console.error(`AI API调用失败: status=${response.status}, response=${errorText}`);
+            let errorMessage = `AI服务调用失败: ${response.status}`;
+            let errorDetail = {};
+            try {
+                errorDetail = JSON.parse(errorText);
+                errorMessage = errorDetail.error?.message || errorDetail.message || errorMessage;
+            } catch {
+                // 忽略JSON解析错误
+            }
             return res.status(response.status).json({
-                error: errorData.error?.message || `AI服务调用失败: ${response.status}`,
-                detail: errorData
+                error: errorMessage,
+                detail: errorDetail
             });
         }
 

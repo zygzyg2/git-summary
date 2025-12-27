@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useRef} from 'react';
 import {message} from 'antd';
 import {Dayjs} from 'dayjs';
 import {RepoConfig, RepoCommits} from '../types';
@@ -40,8 +40,12 @@ export interface UseCommitsReturn {
         apiKey: string,
         model: string,
         promptTemplate: string,
-        openSettings: () => void
+        openSettings: () => void,
+        provider?: string,
+        customApiUrl?: string,
+        customModel?: string
     ) => Promise<void>;
+    cancelAIOptimize: () => void;
     copyToClipboard: () => Promise<void>;
 }
 
@@ -51,6 +55,9 @@ export function useCommits(): UseCommitsReturn {
     const [weeklyReport, setWeeklyReport] = useState('');
     const [optimizing, setOptimizing] = useState(false);
     const [activeCommitTab, setActiveCommitTab] = useState<string>('');
+
+    // 用于取消AI请求
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     // 计算所有提交记录
     const allCommits = useMemo(() => {
@@ -206,7 +213,10 @@ export function useCommits(): UseCommitsReturn {
         apiKey: string,
         model: string,
         promptTemplate: string,
-        openSettings: () => void
+        openSettings: () => void,
+        provider?: string,
+        customApiUrl?: string,
+        customModel?: string
     ) => {
         if (allCommits.length === 0) {
             message.warning('请先获取提交记录');
@@ -218,6 +228,12 @@ export function useCommits(): UseCommitsReturn {
             message.info('请先配置AI API Key');
             return;
         }
+
+        // 取消之前的请求
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
 
         setOptimizing(true);
         setWeeklyReport('');
@@ -232,13 +248,31 @@ export function useCommits(): UseCommitsReturn {
             },
             () => {
                 setOptimizing(false);
+                abortControllerRef.current = null;
                 message.success('AI优化周报完成');
             },
             (error) => {
                 setOptimizing(false);
-                message.error(error);
-            }
+                abortControllerRef.current = null;
+                if (error !== 'cancelled') {
+                    message.error(error);
+                }
+            },
+            provider,
+            customApiUrl,
+            customModel,
+            abortControllerRef.current.signal
         );
+    };
+
+    // 取消AI优化请求
+    const cancelAIOptimize = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+            setOptimizing(false);
+            message.info('已取消AI优化');
+        }
     };
 
     // 复制周报到剪贴板
@@ -268,6 +302,7 @@ export function useCommits(): UseCommitsReturn {
         onGitLogPaste,
         onLocalRepoSubmit,
         handleAIOptimize,
+        cancelAIOptimize,
         copyToClipboard,
     };
 }
