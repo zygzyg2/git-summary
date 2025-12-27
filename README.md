@@ -1,7 +1,7 @@
 # Git Summary
 
 一款基于 Electron 的 Git 提交记录汇总工具，帮助你快速生成工作周报。
-
+![img.png](docs/img.png)
 ## 功能特性
 
 - 📁 支持本地 Git 仓库浏览和选择
